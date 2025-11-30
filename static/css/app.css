@@ -1,0 +1,36 @@
+body {
+  min-height: 100vh;
+}
+
+.summary-tile {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+}
+
+.summary-tile .label {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.summary-tile .value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.table-nowrap th,
+.table-nowrap td {
+  white-space: nowrap;
+}
+
+.table-striped > tbody > tr.table-kangxuan-exception,
+.table-striped > tbody > tr.table-kangxuan-exception > td {
+  background-color: #d1f2eb !important;
+}
+
+.table-kangxuan-exception,
+.table-kangxuan-exception td {
+  background-color: #d1f2eb !important;
+}
+
