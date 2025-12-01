@@ -109,7 +109,7 @@
             </thead>
             <tbody>
               {% for row in original_preview %}
-              <tr class="{% if row.get('_is_kangxuan_exception') %}table-kangxuan-exception{% elif row.get('_is_removed') %}table-warning{% endif %}">
+              <tr class="{% if row.get('_is_kangxuan_exception') %}table-kangxuan-exception{% elif row.get('_is_removed') %}table-warning{% endif %}" data-row-data='{{ row | tojson }}'>
                 <td class="text-center">
                   <input 
                     type="checkbox" 
@@ -137,35 +137,39 @@
 
     <section class="card shadow-sm mt-4 mb-5">
       <div class="card-body">
-        <h2 class="h5 fw-semibold">不上傳 SAP 的訂單（僅顯示前 {{ removed_preview_limit }} 筆）</h2>
-        {% if result.removed_rows %}
-        <div class="table-responsive">
-          <table class="table table-striped table-bordered align-middle table-nowrap">
-            <thead class="table-light">
-              <tr>
-                <th scope="col">規則</th>
-                <th scope="col">說明</th>
-                {% for col in result.columns %}
-                <th scope="col">{{ col }}</th>
+        <h2 class="h5 fw-semibold">不上傳 SAP 的訂單</h2>
+        <div id="removedOrdersContainer">
+          <div class="table-responsive">
+            <table class="table table-striped table-bordered align-middle table-nowrap">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">規則</th>
+                  <th scope="col">說明</th>
+                  {% for col in result.columns %}
+                  <th scope="col">{{ col }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody id="removedOrdersTableBody">
+                {% for removed in result.removed_rows[:removed_preview_limit] %}
+                <tr data-initial-row="true">
+                  <td class="text-nowrap">{{ removed.rule_name }}</td>
+                  <td>{{ removed.description }}</td>
+                  {% for col in result.columns %}
+                  <td>{{ removed.row_data.get(col, "") }}</td>
+                  {% endfor %}
+                </tr>
                 {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for removed in result.removed_rows[:removed_preview_limit] %}
-              <tr>
-                <td class="text-nowrap">{{ removed.rule_name }}</td>
-                <td>{{ removed.description }}</td>
-                {% for col in result.columns %}
-                <td>{{ removed.row_data.get(col, "") }}</td>
-                {% endfor %}
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-2 text-muted small">
+            <span id="removedCount">共 <span id="removedCountValue">{{ result.stats.removed }}</span> 筆</span>
+          </div>
         </div>
-        {% else %}
-        <p class="text-muted mb-0">沒有列被標示為不上傳 SAP。</p>
-        {% endif %}
+        <div id="removedOrdersEmpty" style="display: none;">
+          <p class="text-muted mb-0">沒有列被標示為不上傳 SAP。</p>
+        </div>
       </div>
     </section>
     {% endif %}
@@ -173,9 +177,19 @@
   </div>
 
   <script>
+    // 儲存欄位名稱
+    const columnNames = [
+      {% if result %}
+      {% for col in result.columns %}
+      '{{ col }}'{% if not loop.last %},{% endif %}
+      {% endfor %}
+      {% endif %}
+    ];
+    
     function updateSelectedCount() {
       const checkboxes = document.querySelectorAll('.upload-checkbox');
       const checkedBoxes = document.querySelectorAll('.upload-checkbox:checked');
+      const uncheckedBoxes = document.querySelectorAll('.upload-checkbox:not(:checked)');
       const totalCount = checkboxes.length;
       const selectedCount = checkedBoxes.length;
       const removedCount = totalCount - selectedCount;
@@ -200,6 +214,141 @@
       if (statKept) {
         statKept.textContent = selectedCount;
       }
+      
+      // 更新「不上傳 SAP 的訂單」區塊（只在用戶改變選擇時更新）
+      // 只有在 isInitialized 為 true 時才更新表格（避免初始化時清空伺服器端渲染的資料）
+      if (isInitialized) {
+        updateRemovedOrdersTable(uncheckedBoxes);
+      } else {
+        // 初始化時，只更新數量，不清空表格
+        const removedCountValue = document.getElementById('removedCountValue');
+        if (removedCountValue) {
+          removedCountValue.textContent = removedCount;
+        }
+      }
+    }
+
+    function updateRemovedOrdersTable(uncheckedBoxes) {
+      const tableBody = document.getElementById('removedOrdersTableBody');
+      const container = document.getElementById('removedOrdersContainer');
+      const emptyMessage = document.getElementById('removedOrdersEmpty');
+      const removedCountValue = document.getElementById('removedCountValue');
+      
+      if (!tableBody || !container || !emptyMessage) {
+        console.error('找不到必要的 DOM 元素');
+        return;
+      }
+      
+      // 檢查是否已初始化，如果沒有初始化且表格已有資料，則保留伺服器端渲染的資料
+      if (!isInitialized && tableBody.children.length > 0) {
+        console.log('表格已有伺服器端渲染的資料，保留不更新');
+        return;
+      }
+      
+      // 檢查 columnNames 是否有效
+      if (!columnNames || columnNames.length === 0) {
+        console.error('columnNames 未正確載入，無法更新表格，columnNames:', columnNames);
+        // 如果 columnNames 無效，保留現有表格內容
+        return;
+      }
+      
+      console.log('更新不上傳 SAP 的訂單表格，未勾選項目數:', uncheckedBoxes.length, 'columnNames:', columnNames.length);
+      
+      // 清空表格（包括初始的伺服器端渲染資料）
+      tableBody.innerHTML = '';
+      
+      if (uncheckedBoxes.length === 0) {
+        container.style.display = 'none';
+        emptyMessage.style.display = 'block';
+        if (removedCountValue) {
+          removedCountValue.textContent = '0';
+        }
+        return;
+      }
+      
+      container.style.display = 'block';
+      emptyMessage.style.display = 'none';
+      
+      if (removedCountValue) {
+        removedCountValue.textContent = uncheckedBoxes.length;
+      }
+      
+      // 為每個未勾選的項目建立表格行
+      let successCount = 0;
+      uncheckedBoxes.forEach((checkbox, index) => {
+        const row = checkbox.closest('tr');
+        if (!row) {
+          console.warn('找不到 checkbox 的父元素 tr，索引:', index);
+          return;
+        }
+        
+        const rowDataStr = row.getAttribute('data-row-data');
+        if (!rowDataStr) {
+          console.warn('找不到 data-row-data 屬性，索引:', index, 'row:', row);
+          return;
+        }
+        
+        try {
+          // 嘗試解析 JSON，如果失敗則嘗試修復常見的轉義問題
+          let rowData;
+          try {
+            rowData = JSON.parse(rowDataStr);
+          } catch (parseError) {
+            // 如果解析失敗，嘗試修復可能的 HTML 實體轉義問題
+            let fixedJson = rowDataStr
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'");
+            rowData = JSON.parse(fixedJson);
+          }
+          
+          // 判斷規則名稱和說明
+          let ruleName = '手動取消';
+          let description = '用戶手動取消上傳';
+          
+          // 檢查是否原本就是被標記為不上傳的
+          if (rowData._is_removed) {
+            ruleName = '系統判斷';
+            description = '符合不上傳規則';
+          }
+          
+          // 建立表格行
+          const tr = document.createElement('tr');
+          
+          // 規則欄位
+          const ruleTd = document.createElement('td');
+          ruleTd.className = 'text-nowrap';
+          ruleTd.textContent = ruleName;
+          tr.appendChild(ruleTd);
+          
+          // 說明欄位
+          const descTd = document.createElement('td');
+          descTd.textContent = description;
+          tr.appendChild(descTd);
+          
+          // 資料欄位
+          columnNames.forEach(col => {
+            const td = document.createElement('td');
+            const value = rowData[col];
+            // 處理 null、undefined、NaN 等值
+            if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+              td.textContent = '';
+            } else {
+              td.textContent = String(value);
+            }
+            tr.appendChild(td);
+          });
+          
+          tableBody.appendChild(tr);
+          successCount++;
+        } catch (e) {
+          console.error('解析行資料失敗，索引:', index, '錯誤:', e, '資料:', rowDataStr.substring(0, 100));
+        }
+      });
+      
+      console.log('成功建立', successCount, '筆表格資料');
     }
 
     function downloadSelectedExcel() {
@@ -256,11 +405,51 @@
       });
     }
 
+    // 標記是否已初始化，避免初始化時清空表格
+    let isInitialized = false;
+    
     // 初始化選取數量
     document.addEventListener('DOMContentLoaded', function() {
       const checkboxes = document.querySelectorAll('.upload-checkbox');
       if (checkboxes.length > 0) {
-        updateSelectedCount();
+        // 確保 columnNames 已載入
+        if (columnNames && columnNames.length > 0) {
+          // 只在用戶改變選擇時更新表格，初始化時保留伺服器端渲染的資料
+          // 但需要更新統計數字
+          const checkedBoxes = document.querySelectorAll('.upload-checkbox:checked');
+          const uncheckedBoxes = document.querySelectorAll('.upload-checkbox:not(:checked)');
+          const totalCount = checkboxes.length;
+          const selectedCount = checkedBoxes.length;
+          const removedCount = totalCount - selectedCount;
+          
+          // 更新統計數字
+          const statOriginal = document.getElementById('statOriginal');
+          const statRemoved = document.getElementById('statRemoved');
+          const statKept = document.getElementById('statKept');
+          
+          if (statOriginal) statOriginal.textContent = totalCount;
+          if (statRemoved) statRemoved.textContent = removedCount;
+          if (statKept) statKept.textContent = selectedCount;
+          
+          // 更新選取數量顯示
+          const countElement = document.getElementById('selectedCount');
+          if (countElement) {
+            countElement.textContent = `已選取：${selectedCount} 筆`;
+          }
+          
+          // 更新「不上傳 SAP 的訂單」數量（但不更新表格內容，保留伺服器端渲染的資料）
+          const removedCountValue = document.getElementById('removedCountValue');
+          if (removedCountValue) {
+            removedCountValue.textContent = removedCount;
+          }
+          
+          // 標記為已初始化（在更新統計後才標記，避免初始化時清空表格）
+          setTimeout(() => {
+            isInitialized = true;
+          }, 100);
+        } else {
+          console.warn('columnNames 未正確載入，columnNames:', columnNames);
+        }
       }
     });
   </script>

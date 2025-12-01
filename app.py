@@ -46,7 +46,14 @@ def index():
         job_id = _store_result(result)
         original_preview = []
         for idx, row in result.original_df.iterrows():
-            record = {col: row.get(col) for col in result.columns}
+            record = {}
+            for col in result.columns:
+                value = row.get(col)
+                # 將 NaN、None 轉換為 null，以便 JSON 序列化
+                if pd.isna(value):
+                    record[col] = None
+                else:
+                    record[col] = value
             record["_is_removed"] = idx in result.removed_row_indexes
             record["_is_kangxuan_exception"] = idx in result.kangxuan_exception_indexes
             record["_row_index"] = idx  # 儲存原始索引，用於後續處理
