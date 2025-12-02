@@ -119,7 +119,8 @@
                     onchange="updateSelectedCount()">
                 </td>
                 {% for col in result.columns %}
-                <td>{{ row.get(col, "") }}</td>
+                {% set cell = row.get(col) %}
+                <td>{{ "" if cell is none else cell }}</td>
                 {% endfor %}
               </tr>
               {% endfor %}
@@ -155,9 +156,10 @@
                 <tr data-initial-row="true">
                   <td class="text-nowrap">{{ removed.rule_name }}</td>
                   <td>{{ removed.description }}</td>
-                  {% for col in result.columns %}
-                  <td>{{ removed.row_data.get(col, "") }}</td>
-                  {% endfor %}
+                {% for col in result.columns %}
+                {% set cell = removed.row_data.get(col) %}
+                <td>{{ "" if cell is none else cell }}</td>
+                {% endfor %}
                 </tr>
                 {% endfor %}
               </tbody>

@@ -70,6 +70,24 @@ class KeywordRule(Rule):
         return False, None
 
 
+class EmptyMaterialRule(Rule):
+    """料號欄位為空字串或 None 時，不上傳 SAP。"""
+    
+    def __init__(self, rule_id: str, name: str, description: str):
+        super().__init__(rule_id, name, description)
+
+    def applies(self, row: pd.Series, context: "DataContext") -> Tuple[bool, Optional[str]]:
+        material_col = getattr(context, "material_column", None)
+        if not material_col or material_col not in row:
+            return False, None
+        value = row[material_col]
+        if pd.isna(value):
+            return True, f"料號欄位（{material_col}）為空，不上傳 SAP"
+        if isinstance(value, str) and not value.strip():
+            return True, f"料號欄位（{material_col}）為空字串，不上傳 SAP"
+        return False, None
+
+
 class DataContext:
     """Utility helpers derived from the uploaded DataFrame."""
 
@@ -78,6 +96,7 @@ class DataContext:
         self.amount_column = self._detect_amount_column(df)
         self.text_columns = self._detect_text_columns(df)
         self.dlno_column = self._detect_dlno_column(df)
+        self.material_column = self._detect_material_column(df)
 
     @staticmethod
     def _detect_amount_column(df: pd.DataFrame) -> Optional[str]:
@@ -123,6 +142,17 @@ class DataContext:
                     return col
         return None
 
+    @staticmethod
+    def _detect_material_column(df: pd.DataFrame) -> Optional[str]:
+        """偵測料號欄位"""
+        keywords = ["料號", "料件", "貨號", "商品代碼"]
+        lowered = {col: col.lower() for col in df.columns}
+        for keyword in keywords:
+            for col in df.columns:
+                if keyword.lower() in lowered[col]:
+                    return col
+        return None
+
     def extract_amount(self, row: pd.Series) -> Optional[float]:
         if not self.amount_column or self.amount_column not in row:
             return None
@@ -161,11 +191,16 @@ REMOVAL_RULES: List[Rule] = [
         "0 元且為開通碼的訂單不上傳 SAP",
         ["開通碼"],
     ),
+    EmptyMaterialRule(
+        "rule_empty_material",
+        "料號為空",
+        "料號欄位為空或空字串的訂單不上傳 SAP",
+    ),
     KeywordRule(
         "rule_reference_jinan",
-        "參考書 - 金安",
-        "參考書由金安出貨，不上傳 SAP",
-        ["參考書-金安"],
+        "金安",
+        "包含「金安」的訂單不上傳 SAP",
+        ["金安"],
     ),
     ZeroAmountKeywordRule(
         "rule_zero_online_course",
@@ -186,6 +221,12 @@ def is_kangxuan_exception(row: pd.Series, row_index: int, df: pd.DataFrame, cont
     # 只有當項次金額為0時才需要檢查
     if amount is None or abs(amount) >= 0.0001:
         return False
+    # 若料號欄位為空，則不適用康軒例外規則，交由其他規則處理
+    material_col = getattr(context, "material_column", None)
+    if material_col and material_col in row:
+        material_value = row[material_col]
+        if pd.isna(material_value) or (isinstance(material_value, str) and not material_value.strip()):
+            return False
     
     # 檢查是否有平台號碼DLNO欄位
     if not context.dlno_column or context.dlno_column not in row:
