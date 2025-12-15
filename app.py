@@ -4,7 +4,7 @@ from typing import Dict, List
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 
-from processor.excel_processor import REMOVAL_RULES, ProcessResult, dataframe_to_bytes, process_workbook
+from processor.excel_processor import REMOVAL_RULES, ProcessResult, dataframe_to_bytes, normalize_value, process_workbook
 import pandas as pd
 
 app = Flask(__name__)
@@ -48,8 +48,12 @@ def index():
         for idx, row in result.original_df.iterrows():
             record = {}
             for col in result.columns:
-                value = row.get(col)
-                # 將 NaN、None 轉換為 null，以便 JSON 序列化
+                value = normalize_value(
+                    row.get(col),
+                    column_name=col,
+                    phone_columns=result.phone_columns,
+                )
+                # 將 NaN、None 轉換為 null，以便 JSON 序列化，同時去除小數點
                 if pd.isna(value):
                     record[col] = None
                 else:

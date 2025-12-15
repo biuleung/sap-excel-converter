@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
+import numpy as np
 
 
 @dataclass
@@ -28,6 +29,7 @@ class ProcessResult:
     original_columns: List[str]  # 原始欄位順序
     stats: Dict[str, int]
     amount_column: Optional[str]
+    phone_columns: Set[str]
     workbook_bytes: bytes
 
     def build_download_stream(self) -> BytesIO:
@@ -97,6 +99,7 @@ class DataContext:
         self.text_columns = self._detect_text_columns(df)
         self.dlno_column = self._detect_dlno_column(df)
         self.material_column = self._detect_material_column(df)
+        self.phone_columns = self._detect_phone_columns(df)
 
     @staticmethod
     def _detect_amount_column(df: pd.DataFrame) -> Optional[str]:
@@ -153,6 +156,18 @@ class DataContext:
                     return col
         return None
 
+    @staticmethod
+    def _detect_phone_columns(df: pd.DataFrame) -> Set[str]:
+        """偵測電話欄位，以字串處理避免小數或科學記號。"""
+        keywords = ["電話", "手機", "聯絡電話", "連絡電話", "電話號碼", "phone", "tel"]
+        lowered = {col: col.lower() for col in df.columns}
+        phone_cols: Set[str] = set()
+        for keyword in keywords:
+            for col in df.columns:
+                if keyword.lower() in lowered[col]:
+                    phone_cols.add(col)
+        return phone_cols
+
     def extract_amount(self, row: pd.Series) -> Optional[float]:
         if not self.amount_column or self.amount_column not in row:
             return None
@@ -182,6 +197,50 @@ class DataContext:
             if any(keyword in cell_text for keyword in lowered_keywords):
                 return True
         return False
+
+
+def normalize_value(value: Any, column_name: Optional[str] = None, phone_columns: Optional[Set[str]] = None) -> Any:
+    """Normalize 數值輸出。
+
+    - 電話欄位：**完全依照現在的儲存內容顯示**，一律轉成字串，不做任何補零或改動。
+    - 其他欄位：若是數字或數字字串，轉成整數（去掉小數點）；其餘維持原值。
+    """
+    # 電話欄位：維持原樣（只做型別轉成字串／None）
+    if phone_columns and column_name and column_name in phone_columns:
+        if pd.isna(value):
+            return None
+        return str(value)
+
+    # 其他欄位：處理 NaN
+    if pd.isna(value):
+        return None
+
+    # 保留布林值
+    if isinstance(value, (bool, np.bool_)):
+        return value
+
+    # 直接是數字型別：轉成整數
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError, OverflowError):
+            return value
+
+    # 若是字串，嘗試視為數字再去掉小數
+    if isinstance(value, str):
+        cleaned = value.replace(",", "").strip()
+        if not cleaned:
+            return ""
+        try:
+            num = float(cleaned)
+            return int(round(num))
+        except (TypeError, ValueError):
+            # 不是數字字串，就原樣回傳
+            return value
+
+    return value
 
 
 REMOVAL_RULES: List[Rule] = [
@@ -309,14 +368,26 @@ def reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def dataframe_to_bytes(df: pd.DataFrame) -> bytes:
     buffer = BytesIO()
-    df.to_excel(buffer, index=False)
+    # 以 0 位小數輸出所有數值欄位，避免出現小數點
+    df.to_excel(buffer, index=False, float_format="%.0f")
     buffer.seek(0)
     return buffer.read()
 
 
+def normalize_dataframe(df: pd.DataFrame, phone_columns: Set[str]) -> pd.DataFrame:
+    """逐欄位套用 normalize_value，確保電話欄位為字串。"""
+    if df.empty:
+        return df
+    normalized = df.copy()
+    for col in normalized.columns:
+        normalized[col] = normalized[col].apply(lambda v: normalize_value(v, column_name=col, phone_columns=phone_columns))
+    return normalized
+
+
 def process_workbook(file_stream) -> ProcessResult:
     """Process an uploaded Excel file according to the business rules."""
-    df = pd.read_excel(file_stream)
+    # 全部以字串讀入，確保像電話這類欄位保留原始格式（包含前導 0）
+    df = pd.read_excel(file_stream, dtype=str)
     if df.empty:
         raise ValueError("匯入的 Excel 沒有資料")
 
@@ -342,7 +413,7 @@ def process_workbook(file_stream) -> ProcessResult:
                     rule_id=rule.rule_id,
                     rule_name=rule.name,
                     description=detail or rule.description,
-                    row_data=row.to_dict(),
+                    row_data={k: normalize_value(v, column_name=k, phone_columns=context.phone_columns) for k, v in row.to_dict().items()},
                 )
                 break
 
@@ -359,8 +430,8 @@ def process_workbook(file_stream) -> ProcessResult:
     kept_df_reordered = reorder_columns(kept_df.copy())
     
     # 保持原始欄位順序的 DataFrame（用於下載）
-    # 確保 kept_df 使用原始欄位順序
-    kept_df_original_order = kept_df.copy()
+    # 確保 kept_df 使用原始欄位順序並處理電話欄位為字串
+    kept_df_original_order = normalize_dataframe(kept_df.copy(), context.phone_columns)
     workbook_bytes = dataframe_to_bytes(kept_df_original_order)
     stats = {
         "original": len(df),
@@ -379,6 +450,7 @@ def process_workbook(file_stream) -> ProcessResult:
         original_columns=df.columns.tolist(),  # 原始欄位順序，用於下載
         stats=stats,
         amount_column=context.amount_column,
+        phone_columns=context.phone_columns,
         workbook_bytes=workbook_bytes,
     )
 
