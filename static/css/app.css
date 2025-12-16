@@ -24,13 +24,13 @@ body {
   white-space: nowrap;
 }
 
-/* 自訂條紋效果 - 只對非警告行和非康軒例外行應用 */
-.custom-striped > tbody > tr:nth-of-type(odd):not(.table-warning):not(.table-kangxuan-exception) {
+/* 自訂條紋效果 - 只對非警告行、非康軒例外行和非格式錯誤行應用 */
+.custom-striped > tbody > tr:nth-of-type(odd):not(.table-warning):not(.table-kangxuan-exception):not(.invalid-dlno) {
   --bs-table-bg-color: rgba(0, 0, 0, 0.02);
   background-color: var(--bs-table-bg-color);
 }
 
-.custom-striped > tbody > tr:nth-of-type(odd):not(.table-warning):not(.table-kangxuan-exception) > td {
+.custom-striped > tbody > tr:nth-of-type(odd):not(.table-warning):not(.table-kangxuan-exception):not(.invalid-dlno) > td {
   --bs-table-bg-color: rgba(0, 0, 0, 0.02);
   background-color: var(--bs-table-bg-color);
 }
@@ -47,21 +47,21 @@ body {
   background-color: #fff3cd !important;
 }
 
-/* 平台號碼格式錯誤 - 淺紅色底色 */
+/* 平台號碼格式錯誤 - 淺紅色底色，優先於其他底色 */
 .invalid-dlno,
 .invalid-dlno td {
   background-color: #ffebee !important;
 }
 
-/* 如果同時是警告行和格式錯誤，優先顯示警告的黃色，但可以疊加淺紅色提示 */
+/* 如果同時是警告行和格式錯誤，優先顯示淺紅色 */
 .table-warning.invalid-dlno,
 .table-warning.invalid-dlno td {
-  background-color: #ffe0b2 !important; /* 黃色和淺紅色的混合色 */
+  background-color: #ffebee !important;
 }
 
-/* 如果同時是康軒例外和格式錯誤，優先顯示康軒例外的淺綠色 */
+/* 如果同時是康軒例外和格式錯誤，優先顯示淺紅色 */
 .table-kangxuan-exception.invalid-dlno,
 .table-kangxuan-exception.invalid-dlno td {
-  background-color: #c8e6c9 !important; /* 淺綠色和淺紅色的混合色 */
+  background-color: #ffebee !important;
 }
 

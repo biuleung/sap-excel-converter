@@ -389,7 +389,7 @@ def validate_dlno_format(value: Any) -> bool:
     """
     驗證平台號碼DLNO格式。
     格式規則：
-    - 總長度：3碼（YA + 1碼數字）或 12碼（YA + 10碼數字）
+    - 總長度：11碼（YA + 9碼數字）或 12碼（YA + 10碼數字）
     - 前綴：YA
     - 前綴後：純數字
     """
@@ -398,8 +398,8 @@ def validate_dlno_format(value: Any) -> bool:
     
     value_str = str(value).strip()
     
-    # 檢查長度：必須是 3 或 12 碼
-    if len(value_str) not in [3, 12]:
+    # 檢查長度：必須是 11 或 12 碼
+    if len(value_str) not in [11, 12]:
         return False
     
     # 檢查前綴：必須是 "YA"
@@ -437,11 +437,30 @@ def process_workbook(file_stream) -> ProcessResult:
                 invalid_dlno_indexes.add(idx)
 
     for idx, row in df.iterrows():
+        # 優先檢查格式錯誤，格式錯誤的資料不上傳 SAP
+        is_invalid_dlno = idx in invalid_dlno_indexes
+        
+        # 如果格式錯誤，直接標記為不上傳
+        if is_invalid_dlno:
+            dlno_value = row.get(context.dlno_column) if context.dlno_column else None
+            invalid_rule = ProcessedRow(
+                row_index=idx,
+                rule_id="rule_invalid_dlno",
+                rule_name="平台號碼格式錯誤",
+                description=f"平台號碼格式錯誤（{dlno_value}），不符合格式：YA + 9位或10位數字，總長度11碼或12碼",
+                row_data={k: normalize_value(v, column_name=k, phone_columns=context.phone_columns) for k, v in row.to_dict().items()},
+            )
+            removed_rows.append(invalid_rule)
+            removed_indexes.add(idx)
+            continue
+        
+        # 檢查康軒例外
         if is_kangxuan_exception(row, idx, df, context):
             kept_rows.append(row)
             kangxuan_exception_indexes.add(idx)
             continue
 
+        # 檢查其他不上傳規則
         matched_rule: Optional[ProcessedRow] = None
         for rule in REMOVAL_RULES:
             matches, detail = rule.applies(row, context)
