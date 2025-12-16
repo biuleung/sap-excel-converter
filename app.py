@@ -60,6 +60,7 @@ def index():
                     record[col] = value
             record["_is_removed"] = idx in result.removed_row_indexes
             record["_is_kangxuan_exception"] = idx in result.kangxuan_exception_indexes
+            record["_invalid_dlno"] = idx in result.invalid_dlno_indexes
             record["_row_index"] = idx  # 儲存原始索引，用於後續處理
             original_preview.append(record)
         original_count = len(original_preview)

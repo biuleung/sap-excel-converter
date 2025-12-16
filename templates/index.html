@@ -60,6 +60,10 @@
               <span class="badge" style="width: 24px; height: 24px; display: inline-block; background-color: #d1f2eb;"></span>
               <span>淺綠色底色：康軒參考書目 0 元訂單（會保留並上傳 SAP）</span>
             </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge" style="width: 24px; height: 24px; display: inline-block; background-color: #ffebee;"></span>
+              <span>淺紅色底色：平台號碼格式錯誤（格式應為：YA + 1位或10位數字，總長度3碼或12碼）</span>
+            </div>
           </div>
         </div>
       </div>
@@ -98,7 +102,7 @@
         <h2 class="h5 fw-semibold mb-3">原始 Excel 預覽（共 {{ original_count }} 筆）</h2>
         {% if original_preview %}
         <div class="table-responsive">
-          <table class="table table-striped table-bordered align-middle table-nowrap">
+          <table class="table table-bordered align-middle table-nowrap custom-striped">
             <thead class="table-light">
               <tr>
                 <th scope="col" style="width: 80px;">上傳</th>
@@ -109,7 +113,7 @@
             </thead>
             <tbody>
               {% for row in original_preview %}
-              <tr class="{% if row.get('_is_kangxuan_exception') %}table-kangxuan-exception{% elif row.get('_is_removed') %}table-warning{% endif %}" data-row-data='{{ row | tojson }}'>
+              <tr class="{% if row.get('_is_kangxuan_exception') %}table-kangxuan-exception{% elif row.get('_is_removed') %}table-warning{% endif %}{% if row.get('_invalid_dlno') %} invalid-dlno{% endif %}" data-row-data='{{ row | tojson }}'>
                 <td class="text-center">
                   <input 
                     type="checkbox" 

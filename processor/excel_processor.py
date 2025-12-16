@@ -25,6 +25,7 @@ class ProcessResult:
     removed_rows: List[ProcessedRow]
     removed_row_indexes: Set[int]
     kangxuan_exception_indexes: Set[int]
+    invalid_dlno_indexes: Set[int]  # 平台號碼格式錯誤的行索引
     columns: List[str]
     original_columns: List[str]  # 原始欄位順序
     stats: Dict[str, int]
@@ -384,6 +385,35 @@ def normalize_dataframe(df: pd.DataFrame, phone_columns: Set[str]) -> pd.DataFra
     return normalized
 
 
+def validate_dlno_format(value: Any) -> bool:
+    """
+    驗證平台號碼DLNO格式。
+    格式規則：
+    - 總長度：3碼（YA + 1碼數字）或 12碼（YA + 10碼數字）
+    - 前綴：YA
+    - 前綴後：純數字
+    """
+    if pd.isna(value):
+        return True  # 空值視為有效（由其他規則處理）
+    
+    value_str = str(value).strip()
+    
+    # 檢查長度：必須是 3 或 12 碼
+    if len(value_str) not in [3, 12]:
+        return False
+    
+    # 檢查前綴：必須是 "YA"
+    if not value_str.startswith("YA"):
+        return False
+    
+    # 檢查前綴後的字串：必須是純數字
+    suffix = value_str[2:]
+    if not suffix.isdigit():
+        return False
+    
+    return True
+
+
 def process_workbook(file_stream) -> ProcessResult:
     """Process an uploaded Excel file according to the business rules."""
     # 全部以字串讀入，確保像電話這類欄位保留原始格式（包含前導 0）
@@ -397,6 +427,14 @@ def process_workbook(file_stream) -> ProcessResult:
 
     removed_indexes: Set[int] = set()
     kangxuan_exception_indexes: Set[int] = set()
+    invalid_dlno_indexes: Set[int] = set()
+
+    # 檢查每一行的平台號碼格式
+    if context.dlno_column:
+        for idx, row in df.iterrows():
+            dlno_value = row.get(context.dlno_column)
+            if not validate_dlno_format(dlno_value):
+                invalid_dlno_indexes.add(idx)
 
     for idx, row in df.iterrows():
         if is_kangxuan_exception(row, idx, df, context):
@@ -446,6 +484,7 @@ def process_workbook(file_stream) -> ProcessResult:
         removed_rows=removed_rows,
         removed_row_indexes=removed_indexes,
         kangxuan_exception_indexes=kangxuan_exception_indexes,
+        invalid_dlno_indexes=invalid_dlno_indexes,
         columns=df_reordered.columns.tolist(),  # 重新排列後的欄位順序，用於顯示
         original_columns=df.columns.tolist(),  # 原始欄位順序，用於下載
         stats=stats,
