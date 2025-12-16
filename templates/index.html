@@ -47,6 +47,7 @@
           {% for rule in rules %}
           <li><span class="fw-semibold">{{ rule.name }}</span>：{{ rule.description }}</li>
           {% endfor %}
+          <li><span class="fw-semibold">重複資料</span>：當平台號碼DLNO、網站會員代號、項次金額、料號四個欄位都相同時，只保留第一筆資料，其他筆不上傳 SAP</li>
           <li><span class="fw-semibold">康軒參考書目 0 元訂單</span>：照常上傳 SAP</li>
         </ul>
         <div class="border-top pt-3">

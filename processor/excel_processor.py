@@ -101,6 +101,7 @@ class DataContext:
         self.dlno_column = self._detect_dlno_column(df)
         self.material_column = self._detect_material_column(df)
         self.phone_columns = self._detect_phone_columns(df)
+        self.member_column = self._detect_member_column(df)
 
     @staticmethod
     def _detect_amount_column(df: pd.DataFrame) -> Optional[str]:
@@ -168,6 +169,17 @@ class DataContext:
                 if keyword.lower() in lowered[col]:
                     phone_cols.add(col)
         return phone_cols
+
+    @staticmethod
+    def _detect_member_column(df: pd.DataFrame) -> Optional[str]:
+        """偵測網站會員代號欄位"""
+        keywords = ["網站會員代號", "會員代號", "會員編號", "會員號碼", "member", "member_id"]
+        lowered = {col: col.lower() for col in df.columns}
+        for keyword in keywords:
+            for col in df.columns:
+                if keyword.lower() in lowered[col]:
+                    return col
+        return None
 
     def extract_amount(self, row: pd.Series) -> Optional[float]:
         if not self.amount_column or self.amount_column not in row:
@@ -436,6 +448,9 @@ def process_workbook(file_stream) -> ProcessResult:
             if not validate_dlno_format(dlno_value):
                 invalid_dlno_indexes.add(idx)
 
+    # 追蹤已保留的組合（平台號碼DLNO、網站會員代號、項次金額、料號）
+    seen_combinations: Set[Tuple[Any, Any, Any, Any]] = set()
+
     for idx, row in df.iterrows():
         # 優先檢查格式錯誤，格式錯誤的資料不上傳 SAP
         is_invalid_dlno = idx in invalid_dlno_indexes
@@ -458,6 +473,54 @@ def process_workbook(file_stream) -> ProcessResult:
         if is_kangxuan_exception(row, idx, df, context):
             kept_rows.append(row)
             kangxuan_exception_indexes.add(idx)
+            # 記錄這個組合，避免後續重複資料被保留
+            if context.dlno_column and context.member_column and context.amount_column and context.material_column:
+                dlno_val = row.get(context.dlno_column)
+                member_val = row.get(context.member_column)
+                amount_val = context.extract_amount(row)
+                material_val = row.get(context.material_column)
+                # 標準化值以便比較
+                dlno_str = str(dlno_val).strip() if pd.notna(dlno_val) else ""
+                member_str = str(member_val).strip() if pd.notna(member_val) else ""
+                # 將金額四捨五入到整數，避免浮點數精度問題
+                amount_num = round(amount_val) if amount_val is not None else 0
+                material_str = str(material_val).strip() if pd.notna(material_val) else ""
+                combination = (dlno_str, member_str, amount_num, material_str)
+                seen_combinations.add(combination)
+            continue
+
+        # 檢查重複資料規則：平台號碼DLNO、網站會員代號、項次金額、料號都相同時，只保留第一筆
+        is_duplicate = False
+        if context.dlno_column and context.member_column and context.amount_column and context.material_column:
+            dlno_val = row.get(context.dlno_column)
+            member_val = row.get(context.member_column)
+            amount_val = context.extract_amount(row)
+            material_val = row.get(context.material_column)
+            
+            # 標準化值以便比較
+            dlno_str = str(dlno_val).strip() if pd.notna(dlno_val) else ""
+            member_str = str(member_val).strip() if pd.notna(member_val) else ""
+            # 將金額四捨五入到整數，避免浮點數精度問題
+            amount_num = round(amount_val) if amount_val is not None else 0
+            material_str = str(material_val).strip() if pd.notna(material_val) else ""
+            combination = (dlno_str, member_str, amount_num, material_str)
+            
+            if combination in seen_combinations:
+                is_duplicate = True
+                duplicate_rule = ProcessedRow(
+                    row_index=idx,
+                    rule_id="rule_duplicate_combination",
+                    rule_name="重複資料",
+                    description=f"與已保留的資料重複（平台號碼DLNO、網站會員代號、項次金額、料號都相同），只保留第一筆",
+                    row_data={k: normalize_value(v, column_name=k, phone_columns=context.phone_columns) for k, v in row.to_dict().items()},
+                )
+                removed_rows.append(duplicate_rule)
+                removed_indexes.add(idx)
+            else:
+                # 記錄這個組合
+                seen_combinations.add(combination)
+        
+        if is_duplicate:
             continue
 
         # 檢查其他不上傳規則
@@ -479,6 +542,20 @@ def process_workbook(file_stream) -> ProcessResult:
             removed_indexes.add(idx)
         else:
             kept_rows.append(row)
+            # 記錄這個組合，避免後續重複資料被保留
+            if context.dlno_column and context.member_column and context.amount_column and context.material_column:
+                dlno_val = row.get(context.dlno_column)
+                member_val = row.get(context.member_column)
+                amount_val = context.extract_amount(row)
+                material_val = row.get(context.material_column)
+                # 標準化值以便比較
+                dlno_str = str(dlno_val).strip() if pd.notna(dlno_val) else ""
+                member_str = str(member_val).strip() if pd.notna(member_val) else ""
+                # 將金額四捨五入到整數，避免浮點數精度問題
+                amount_num = round(amount_val) if amount_val is not None else 0
+                material_str = str(material_val).strip() if pd.notna(material_val) else ""
+                combination = (dlno_str, member_str, amount_num, material_str)
+                seen_combinations.add(combination)
 
     kept_df = pd.DataFrame(kept_rows, columns=df.columns) if kept_rows else pd.DataFrame(columns=df.columns)
     
