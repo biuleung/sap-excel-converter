@@ -131,8 +131,16 @@
             </tbody>
           </table>
         </div>
-        <div class="mt-2 text-muted small">
-          <span id="selectedCount">已選取：{{ original_count - result.stats.removed }} 筆</span>
+        <div class="mt-2 d-flex justify-content-between align-items-center">
+          <span class="text-muted small">
+            <span id="selectedCount">已選取：{{ original_count - result.stats.removed }} 筆</span>
+          </span>
+          {% if result.amount_column %}
+          <div class="text-end">
+            <span class="fw-semibold">訂單總金額：</span>
+            <span class="fw-bold text-primary fs-5" id="totalAmount">$0</span>
+          </div>
+          {% endif %}
         </div>
         {% else %}
         <p class="text-muted mb-0">沒有資料可供預覽。</p>
@@ -192,6 +200,61 @@
       {% endif %}
     ];
     
+    // 儲存金額欄位名稱
+    const amountColumnName = {% if result and result.amount_column %}'{{ result.amount_column }}'{% else %}null{% endif %};
+    
+    function calculateTotalAmount() {
+      if (!amountColumnName) {
+        return;
+      }
+      
+      const checkboxes = document.querySelectorAll('.upload-checkbox:checked');
+      let total = 0;
+      
+      checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        if (!row) return;
+        
+        const rowDataStr = row.getAttribute('data-row-data');
+        if (!rowDataStr) return;
+        
+        try {
+          let rowData;
+          try {
+            rowData = JSON.parse(rowDataStr);
+          } catch (parseError) {
+            // 如果解析失敗，嘗試修復常見的轉義問題
+            let fixedJson = rowDataStr
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'");
+            rowData = JSON.parse(fixedJson);
+          }
+          
+          const amountValue = rowData[amountColumnName];
+          if (amountValue !== null && amountValue !== undefined && amountValue !== '') {
+            // 處理字串中的逗號
+            const amountStr = String(amountValue).replace(/,/g, '');
+            const amountNum = parseFloat(amountStr);
+            if (!isNaN(amountNum)) {
+              total += amountNum;
+            }
+          }
+        } catch (e) {
+          console.error('計算金額時發生錯誤:', e);
+        }
+      });
+      
+      // 更新總金額顯示
+      const totalAmountElement = document.getElementById('totalAmount');
+      if (totalAmountElement) {
+        // 格式化金額，每三位數加逗號
+        totalAmountElement.textContent = '$' + total.toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      }
+    }
+    
     function updateSelectedCount() {
       const checkboxes = document.querySelectorAll('.upload-checkbox');
       const checkedBoxes = document.querySelectorAll('.upload-checkbox:checked');
@@ -205,6 +268,9 @@
       if (countElement) {
         countElement.textContent = `已選取：${selectedCount} 筆`;
       }
+      
+      // 計算並更新總金額
+      calculateTotalAmount();
       
       // 更新處理結果區塊的統計數字
       const statOriginal = document.getElementById('statOriginal');
@@ -442,6 +508,9 @@
           if (countElement) {
             countElement.textContent = `已選取：${selectedCount} 筆`;
           }
+          
+          // 計算並顯示總金額
+          calculateTotalAmount();
           
           // 更新「不上傳 SAP 的訂單」數量（但不更新表格內容，保留伺服器端渲染的資料）
           const removedCountValue = document.getElementById('removedCountValue');
